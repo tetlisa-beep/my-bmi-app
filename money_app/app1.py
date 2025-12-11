@@ -73,30 +73,41 @@ if os.path.exists(DATA_FILE):
 else:
     df = pd.DataFrame(columns=['Date', 'Item', 'Payer', 'Amount', 'Currency', 'Beneficiaries'])
 
-# 2. 新增帳目區域
-with st.container(border=True):
-    st.subheader("➕ 新增一筆消費")
-    with st.form("entry_form"):
+# --- 定義彈出視窗函數 (放在主邏輯之前) ---
+
+# A. 新增用的彈出視窗 (修正版：解決按鈕失效問題)
+@st.dialog("➕ 新增一筆消費")
+def add_entry_dialog():
+    with st.form("add_form"):
+        st.write("請輸入消費細節：")
         col1, col2 = st.columns(2)
         item = col1.text_input("消費項目 (如: 晚餐、車票)")
         amount = col2.number_input("金額", min_value=0.0, step=10.0)
         
         col3, col4 = st.columns(2)
-        # 這裡的選單會根據 session_state['members'] 動態改變
         payer = col3.selectbox("誰先付錢?", st.session_state['members'])
         currency = col4.selectbox("幣別", CURRENCIES)
         
-        # 多選：分給誰？預設全選
         beneficiaries = st.multiselect(
             "分給誰? (預設全員)", 
             st.session_state['members'], 
             default=st.session_state['members']
         )
         
-        submitted = st.form_submit_button("儲存這筆帳")
+        st.markdown("---")
+        st.caption("確認以上資訊無誤後，請按下儲存：")
         
+        # 改成單一按鈕，直接觸發儲存，避免 Streamlit 巢狀按鈕失效的問題
+        submitted = st.form_submit_button("✅ 確認無誤，立即儲存")
+
         if submitted:
-            if amount > 0 and len(beneficiaries) > 0:
+            if amount > 0 and len(beneficiaries) > 0 and item:
+                # 重新讀取最新的 df (避免覆蓋)
+                if os.path.exists(DATA_FILE):
+                    current_df = pd.read_csv(DATA_FILE)
+                else:
+                    current_df = pd.DataFrame(columns=['Date', 'Item', 'Payer', 'Amount', 'Currency', 'Beneficiaries'])
+                
                 new_entry = {
                     'Date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
                     'Item': item,
@@ -105,26 +116,101 @@ with st.container(border=True):
                     'Currency': currency,
                     'Beneficiaries': ",".join(beneficiaries)
                 }
-                df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-                df.to_csv(DATA_FILE, index=False)
+                
+                # 存檔邏輯
+                current_df = pd.concat([current_df, pd.DataFrame([new_entry])], ignore_index=True)
+                current_df.to_csv(DATA_FILE, index=False)
                 st.success("已儲存！")
                 st.rerun()
             else:
-                st.error("請輸入金額並至少選擇一位分帳成員")
+                st.error("❌ 儲存失敗：請檢查「項目名稱」、「金額」與「分帳人」是否都有填寫？")
+                
+# B. 修改用的彈出視窗
+@st.dialog("✏️ 修改消費內容")
+def edit_entry_dialog(index, row_data):
+    # 先解析原本的分帳人字串變回 list
+    original_beneficiaries = str(row_data['Beneficiaries']).split(",")
+    # 過濾掉可能不存在的舊成員
+    valid_defaults = [m for m in original_beneficiaries if m in st.session_state['members']]
 
-# 3. 顯示與管理流水帳
-st.divider()
-st.subheader("📝 消費明細")
+    with st.form("edit_form"):
+        col1, col2 = st.columns(2)
+        item = col1.text_input("消費項目", value=row_data['Item'])
+        amount = col2.number_input("金額", min_value=0.0, step=10.0, value=float(row_data['Amount']))
+        
+        col3, col4 = st.columns(2)
+        # 處理付款人：如果原本的人被刪掉了，就預設選第一個
+        default_payer_index = 0
+        if row_data['Payer'] in st.session_state['members']:
+            default_payer_index = st.session_state['members'].index(row_data['Payer'])
+        
+        payer = col3.selectbox("誰先付錢?", st.session_state['members'], index=default_payer_index)
+        
+        # 處理幣別
+        default_curr_index = 0
+        if row_data['Currency'] in CURRENCIES:
+            default_curr_index = CURRENCIES.index(row_data['Currency'])
+        currency = col4.selectbox("幣別", CURRENCIES, index=default_curr_index)
+        
+        beneficiaries = st.multiselect(
+            "分給誰?", 
+            st.session_state['members'], 
+            default=valid_defaults
+        )
+        
+        submitted = st.form_submit_button("💾 儲存修改")
+        
+        if submitted:
+            # 讀取檔案
+            if os.path.exists(DATA_FILE):
+                current_df = pd.read_csv(DATA_FILE)
+                
+                # 更新該筆資料 (使用 index 定位)
+                current_df.at[index, 'Item'] = item
+                current_df.at[index, 'Amount'] = amount
+                current_df.at[index, 'Payer'] = payer
+                current_df.at[index, 'Currency'] = currency
+                current_df.at[index, 'Beneficiaries'] = ",".join(beneficiaries)
+                
+                current_df.to_csv(DATA_FILE, index=False)
+                st.success("修改完成！")
+                st.rerun()
+
+# 2. 新增帳目區域 (改為按鈕觸發彈窗)
+with st.container(border=True):
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        st.subheader("📝 帳目管理")
+    with col_b:
+        if st.button("➕ 新增一筆", use_container_width=True, type="primary"):
+            add_entry_dialog()
+
+# 3. 顯示與管理流水帳 (包含修改與刪除)
 if not df.empty:
+    # 顯示表格
     st.dataframe(df, use_container_width=True)
     
-    with st.expander("🗑️ 刪除舊資料"):
-        idx_to_delete = st.number_input("輸入要刪除的行號 (Index)", min_value=0, max_value=max(0, len(df)-1), step=1)
-        if st.button("刪除該行"):
-            df = df.drop(df.index[idx_to_delete])
+    st.caption("👇 若要修改或刪除，請輸入對應的行號 (最左邊的數字 0, 1, 2...)")
+    
+    col_manage1, col_manage2, col_manage3 = st.columns([1, 1, 1])
+    
+    with col_manage1:
+        target_index = st.number_input("選擇行號 (Index)", min_value=0, max_value=max(0, len(df)-1), step=1, label_visibility="collapsed")
+    
+    with col_manage2:
+        if st.button("✏️ 修改此筆", use_container_width=True):
+            # 抓取該行資料並開啟彈窗
+            target_row = df.iloc[target_index]
+            edit_entry_dialog(target_index, target_row)
+            
+    with col_manage3:
+        if st.button("🗑️ 刪除此筆", use_container_width=True):
+            df = df.drop(df.index[target_index])
             df.to_csv(DATA_FILE, index=False)
-            st.success("已刪除")
+            st.success(f"已刪除第 {target_index} 筆")
             st.rerun()
+else:
+    st.info("目前沒有資料，請點擊右上方「新增一筆」按鈕。")
 
 # 4. 自動結算邏輯
 st.divider()
