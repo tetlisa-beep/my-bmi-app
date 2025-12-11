@@ -3,10 +3,16 @@ import pandas as pd
 import os
 import json
 
+# --- 設定 ---
+# 定義哪些幣別是「整數幣別」(不需要小數點)
+INT_CURRENCIES = ['TWD', 'JPY', 'KRW', 'VND']
+# 定義所有支援幣別
+CURRENCIES = ['TWD', 'JPY', 'USD', 'EUR']
+
 # --- 設定檔案路徑 ---
 DATA_FILE = 'trip_ledger.csv'      # 存帳務資料
 CONFIG_FILE = 'members.json'       # 存成員名單
-CURRENCIES = ['TWD', 'JPY', 'USD', 'EUR', 'KRW'] # 這裡可以自己擴充
+CURRENCIES = ['JPY', 'TWD', 'USD', 'EUR'] # 這裡可以自己擴充
 
 # --- 函數：讀取與儲存成員 ---
 def load_members():
@@ -124,51 +130,150 @@ if not df.empty:
 st.divider()
 st.subheader("💰 結算儀表板")
 
+# 小工具：把數字變好看 (如果是整數就不要顯示 .00)
+def format_money(val):
+    if val == int(val):
+        return f"{int(val)}"
+    else:
+        return f"{val:.2f}"
+
 if not df.empty:
     grouped = df.groupby('Currency')
     
+    # 建立分頁，每個幣別一個分頁
     tabs = st.tabs([f"{curr}" for curr in grouped.groups.keys()])
     
     for i, (currency, group) in enumerate(grouped):
         with tabs[i]:
-            st.write(f"### {currency} 結算")
+            st.write(f"### {currency} 帳務總覽")
+            
+            # --- 步驟 1: 計算每個人的淨額 (Net Balance) ---
             balances = {m: 0.0 for m in st.session_state['members']}
             
             for index, row in group.iterrows():
-                amt = row['Amount']
+                amt = float(row['Amount'])
                 who_paid = row['Payer']
                 
-                # 處理可能發生的舊成員已被刪除的情況
+                # 初始化：防止舊成員資料報錯
                 if who_paid not in balances: balances[who_paid] = 0.0
 
                 who_benefits = str(row['Beneficiaries']).split(",")
-                
-                # 先墊錢的人 +
-                balances[who_paid] += amt
-                
-                # 分錢的人 -
                 valid_beneficiaries = [b for b in who_benefits if b] # 過濾空字串
+                
                 if valid_beneficiaries:
+                    # 先墊錢的人 (加回去)
+                    balances[who_paid] += amt
+                    
+                    # 分錢的人 (扣掉)
                     split_amt = amt / len(valid_beneficiaries)
                     for b in valid_beneficiaries:
                         if b not in balances: balances[b] = 0.0
                         balances[b] -= split_amt
-            
-            # 格式化顯示
-            res_df = pd.DataFrame(list(balances.items()), columns=['成員', '結算金額'])
-            res_df['狀態'] = res_df['結算金額'].apply(
-                lambda x: f"應收 {x:.2f}" if x > 0 else (f"應付 {abs(x):.2f}" if x < 0 else "平")
-            )
-            
-            # 用顏色標記 (收錢顯示綠色，付錢顯示紅色)
-            def color_surplus(val):
-                color = '#d4edda' if val > 0 else '#f8d7da' if val < 0 else 'transparent'
-                return f'background-color: {color}'
 
-            st.dataframe(res_df.style.applymap(color_surplus, subset=['結算金額']))
+            # --- 步驟 2: 修整數字 (解決 0.0000001 的問題) ---
+            # 強制四捨五入到小數點後 2 位
+            for k, v in balances.items():
+                balances[k] = round(v, 2)
+
+            # --- 步驟 3: 顯示餘額表 ---
+            # 製作顯示用的表格
+            res_df = pd.DataFrame(list(balances.items()), columns=['成員', '淨額'])
             
-            # 簡單的文字總結
-            st.caption("正數代表因為先墊錢所以要「收錢」，負數代表需要「拿錢出來」。")
+            # 增加狀態描述
+            def get_status(x):
+                if x > 0: return f"應收 {format_money(x)}"
+                elif x < 0: return f"應付 {format_money(abs(x))}"
+                else: return "✅ 平帳"
+            
+            res_df['狀態'] = res_df['淨額'].apply(get_status)
+            
+            # 顏色設定
+            def color_surplus(val):
+                if val > 0: return 'background-color: #d4edda; color: #155724' # 綠色
+                elif val < 0: return 'background-color: #f8d7da; color: #721c24' # 紅色
+                return 'color: gray' # 平帳
+
+            st.caption("👇 每個人目前的欠款/收款總額：")
+            st.dataframe(res_df[['成員', '狀態']].style.applymap(color_surplus, subset=['狀態']), use_container_width=True)
+
+            # --- 步驟 4: 計算「誰該付錢給誰」 (核心演算法) ---
+            st.markdown("#### 💸 建議轉帳路徑 (誰付給誰)")
+            
+            # 分成兩組：欠錢的人 (Debtors) 和 收錢的人 (Creditors)
+            debtors = []
+            creditors = []
+            
+            for person, amount in balances.items():
+                # 忽略金額太小的誤差 (例如 0.01)
+                if amount < -0.01:
+                    debtors.append({'person': person, 'amount': amount})
+                elif amount > 0.01:
+                    creditors.append({'person': person, 'amount': amount})
+            
+            # 排序：金額大的排前面，減少轉帳次數 (Greedy Algorithm)
+            debtors.sort(key=lambda x: x['amount'])       # 負越多的排前面
+            creditors.sort(key=lambda x: x['amount'], reverse=True) # 正越多的排前面
+            
+            transfer_list = []
+            
+            # 開始配對
+            i = 0 # 指向欠錢的人
+            j = 0 # 指向收錢的人
+            
+            while i < len(debtors) and j < len(creditors):
+                debtor = debtors[i]
+                creditor = creditors[j]
+                
+                # 要轉帳的金額 = min(欠錢的人欠的錢, 收錢的人該收的錢)
+                amount = min(abs(debtor['amount']), creditor['amount'])
+                
+                # 紀錄這一筆
+                transfer_list.append(f"🔴 **{debtor['person']}** 應轉給 🟢 **{creditor['person']}** : {format_money(amount)}")
+                
+                # 更新餘額
+                debtor['amount'] += amount
+                creditor['amount'] -= amount
+                
+                # 如果這個人還完了/收完了，就換下一個人
+                if abs(debtor['amount']) < 0.01:
+                    i += 1
+                if creditor['amount'] < 0.01:
+                    j += 1
+            
+            # 顯示結果
+            if not transfer_list:
+                st.success("🎉 目前沒有人需要轉帳！")
+            else:
+                for transfer in transfer_list:
+                    st.write(transfer)
 
 else:
     st.info("目前還沒有記帳資料。")
+
+# --- 這裡是用來「存檔」跟「讀檔」的功能區 ---
+st.markdown("---") 
+st.header("💾 資料備份與還原")
+
+# 1. 製作「下載按鈕」
+try:
+    current_df = pd.read_csv("trip_ledger.csv")
+    csv_data = current_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 下載目前的記帳紀錄 (請務必在關閉前下載！)",
+        data=csv_data,
+        file_name="trip_ledger_backup.csv",
+        mime="text/csv",
+    )
+except:
+    st.warning("目前還沒有記帳資料可以下載喔！")
+
+# 2. 製作「上傳按鈕」
+uploaded_file = st.file_uploader("📤 上傳上次備份的 CSV 檔 (還原紀錄)", type=["csv"])
+
+if uploaded_file is not None:
+    with open("trip_ledger.csv", "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    st.success("🎉 紀錄還原成功！請點擊下方按鈕重新整理。")
+    if st.button("點我重新整理載入資料"):
+        st.rerun()
+        
