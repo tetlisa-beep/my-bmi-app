@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import time
 
 # --- 設定 ---
 # 定義哪些幣別是「整數幣別」(不需要小數點)
@@ -33,13 +34,13 @@ st.title("✈️ 旅程分帳系統 (動態成員版)")
 if 'members' not in st.session_state:
     st.session_state['members'] = load_members()
 
-# --- 側邊欄：成員管理 ---
+# --- 側邊欄：成員管理 (升級版) ---
 with st.sidebar:
     st.header("👥 成員管理")
     
-    # 新增成員
+    # A. 新增成員區
     new_name = st.text_input("輸入新成員名字")
-    if st.button("新增成員"):
+    if st.button("➕ 新增成員"):
         if new_name and new_name not in st.session_state['members']:
             st.session_state['members'].append(new_name)
             save_members(st.session_state['members'])
@@ -47,16 +48,66 @@ with st.sidebar:
             st.rerun()
         elif new_name in st.session_state['members']:
             st.warning("這個名字已經在名單裡了")
-        else:
-            st.warning("請輸入名字")
-
-    # 顯示目前成員並允許重置
-    st.divider()
-    st.write("目前成員：")
-    for m in st.session_state['members']:
-        st.write(f"- {m}")
     
-    if st.button("⚠️ 清空所有成員"):
+    st.divider()
+    
+    # B. 進階管理區 (修改與刪除)
+    st.write("🔧 **進階操作**")
+    
+    # 如果有名單才顯示操作區
+    if st.session_state['members']:
+        # 讓使用者選擇要對誰開刀
+        target_member = st.selectbox("選擇成員", st.session_state['members'])
+        
+        # 選擇動作
+        action = st.radio("動作", ["修改名字", "移除這位成員"], horizontal=True)
+        
+        if action == "修改名字":
+            rename_input = st.text_input(f"把 {target_member} 改名為：")
+            if st.button("確認改名"):
+                if rename_input and rename_input != target_member:
+                    # 1. 修改名單列表 (JSON)
+                    st.session_state['members'] = [rename_input if x == target_member else x for x in st.session_state['members']]
+                    save_members(st.session_state['members'])
+                    
+                    # 2. 修改記帳資料 (CSV) - 這一步最重要！
+                    if os.path.exists(DATA_FILE):
+                        df_update = pd.read_csv(DATA_FILE)
+                        # 更新「付款人」
+                        df_update['Payer'] = df_update['Payer'].replace(target_member, rename_input)
+                        
+                        # 更新「分帳人」 (因為是逗號字串，要拆開來處理)
+                        def update_beneficiaries(b_str):
+                            if pd.isna(b_str): return b_str
+                            names = str(b_str).split(',')
+                            # 如果遇到舊名字就換新名字
+                            new_names = [rename_input if n.strip() == target_member else n.strip() for n in names]
+                            return ",".join(new_names)
+                            
+                        df_update['Beneficiaries'] = df_update['Beneficiaries'].apply(update_beneficiaries)
+                        
+                        # 存檔
+                        df_update.to_csv(DATA_FILE, index=False)
+                    
+                    st.success(f"已將 {target_member} 改名為 {rename_input} (相關帳務已同步更新)")
+                    time.sleep(1)
+                    st.rerun()
+                    
+        elif action == "移除這位成員":
+            st.warning(f"注意：移除 {target_member} 只會從選單移除，不會刪除他過去的記帳紀錄。")
+            if st.button(f"確定移除 {target_member}"):
+                st.session_state['members'].remove(target_member)
+                save_members(st.session_state['members'])
+                st.rerun()
+
+    # 顯示目前名單的小清單
+    with st.expander("查看目前完整名單"):
+        for m in st.session_state['members']:
+            st.write(f"- {m}")
+
+    st.divider()
+    # 危險區域
+    if st.button("⚠️ 清空所有成員 (重置)"):
         st.session_state['members'] = []
         save_members([])
         st.rerun()
@@ -68,8 +119,14 @@ if not st.session_state['members']:
     st.stop()
 
 # 1. 讀取/初始化帳務資料
+# 1. 讀取/初始化帳務資料
 if os.path.exists(DATA_FILE):
     df = pd.read_csv(DATA_FILE)
+    
+    # --- 🔥 新增這行：自動清洗髒資料 ---
+    # 如果發現有 'Unnamed: 0' 這種奇怪的欄位 (Excel 或舊存檔造成的)，直接刪除
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    
 else:
     df = pd.DataFrame(columns=['Date', 'Item', 'Payer', 'Amount', 'Currency', 'Beneficiaries'])
 
@@ -321,23 +378,59 @@ st.header("💾 資料備份與還原")
 
 # 1. 製作「下載按鈕」
 try:
-    current_df = pd.read_csv("trip_ledger.csv")
-    csv_data = current_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 下載目前的記帳紀錄 (請務必在關閉前下載！)",
-        data=csv_data,
-        file_name="trip_ledger_backup.csv",
-        mime="text/csv",
-    )
-except:
-    st.warning("目前還沒有記帳資料可以下載喔！")
+    if os.path.exists(DATA_FILE):
+        current_df = pd.read_csv(DATA_FILE)
+        csv_data = current_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 下載目前的記帳紀錄 (請務必在關閉前下載！)",
+            data=csv_data,
+            file_name="trip_ledger_backup.csv",
+            mime="text/csv",
+        )
+    else:
+        st.warning("目前還沒有檔案可以下載。")
+except Exception as e:
+    st.error(f"下載功能發生錯誤: {e}")
 
-# 2. 製作「上傳按鈕」
+# 2. 製作「上傳按鈕」 (強力修正版：同步更新資料與成員)
 uploaded_file = st.file_uploader("📤 上傳上次備份的 CSV 檔 (還原紀錄)", type=["csv"])
 
 if uploaded_file is not None:
-    with open("trip_ledger.csv", "wb") as f:
+    # A. 覆蓋舊的記帳檔案
+    with open(DATA_FILE, "wb") as f:
         f.write(uploaded_file.getbuffer())
-    st.success("🎉 紀錄還原成功！請點擊下方按鈕重新整理。")
-    if st.button("點我重新整理載入資料"):
-        st.rerun()
+    
+    # B. 同步成員名單 (最重要的一步！從檔案裡把人找回來)
+    try:
+        # 讀取剛剛寫入的新檔案
+        df_restore = pd.read_csv(DATA_FILE)
+        
+        # 準備一個集合來收集名字 (避免重複)
+        restored_members = set(st.session_state.get('members', []))
+        
+        # 1. 抓付款人 (Payer)
+        if 'Payer' in df_restore.columns:
+            payers = df_restore['Payer'].dropna().astype(str).unique()
+            restored_members.update(payers)
+            
+        # 2. 抓分帳人 (Beneficiaries)
+        if 'Beneficiaries' in df_restore.columns:
+            for ben_str in df_restore['Beneficiaries'].dropna():
+                # 拆解逗號 "Alice,Bob" -> ["Alice", "Bob"]
+                names = str(ben_str).split(',')
+                restored_members.update([n.strip() for n in names if n.strip()])
+        
+        # C. 存回系統設定
+        # 更新記憶體中的名單
+        st.session_state['members'] = sorted(list(restored_members)) 
+        # 更新硬碟中的名單檔案 (json)
+        save_members(st.session_state['members'])
+        
+        # D. 顯示成功並自動重整
+        st.success(f"🎉 還原成功！已同步帳目與 {len(restored_members)} 位成員資料。")
+        st.progress(100) # 給個進度條視覺回饋
+        time.sleep(1.0)  # 停頓 1 秒讓使用者看到成功訊息
+        st.rerun()       # <--- 關鍵！強迫網頁立刻從頭重跑，讓上方的表格更新
+        
+    except Exception as e:
+        st.error(f"還原過程中發生錯誤，請檢查 CSV 格式: {e}")
