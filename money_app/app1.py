@@ -130,7 +130,7 @@ if not df.empty:
 st.divider()
 st.subheader("💰 結算儀表板")
 
-# 小工具：把數字變好看 (如果是整數就不要顯示 .00)
+# 小工具：把數字變好看
 def format_money(val):
     if val == int(val):
         return f"{int(val)}"
@@ -140,46 +140,37 @@ def format_money(val):
 if not df.empty:
     grouped = df.groupby('Currency')
     
-    # 建立分頁，每個幣別一個分頁
     tabs = st.tabs([f"{curr}" for curr in grouped.groups.keys()])
     
     for i, (currency, group) in enumerate(grouped):
         with tabs[i]:
             st.write(f"### {currency} 帳務總覽")
             
-            # --- 步驟 1: 計算每個人的淨額 (Net Balance) ---
+            # --- 步驟 1: 計算每個人的淨額 ---
             balances = {m: 0.0 for m in st.session_state['members']}
             
             for index, row in group.iterrows():
                 amt = float(row['Amount'])
                 who_paid = row['Payer']
-                
-                # 初始化：防止舊成員資料報錯
                 if who_paid not in balances: balances[who_paid] = 0.0
 
                 who_benefits = str(row['Beneficiaries']).split(",")
-                valid_beneficiaries = [b for b in who_benefits if b] # 過濾空字串
+                valid_beneficiaries = [b for b in who_benefits if b]
                 
                 if valid_beneficiaries:
-                    # 先墊錢的人 (加回去)
                     balances[who_paid] += amt
-                    
-                    # 分錢的人 (扣掉)
                     split_amt = amt / len(valid_beneficiaries)
                     for b in valid_beneficiaries:
                         if b not in balances: balances[b] = 0.0
                         balances[b] -= split_amt
 
-            # --- 步驟 2: 修整數字 (解決 0.0000001 的問題) ---
-            # 強制四捨五入到小數點後 2 位
+            # --- 步驟 2: 修整數字 ---
             for k, v in balances.items():
                 balances[k] = round(v, 2)
 
-            # --- 步驟 3: 顯示餘額表 ---
-            # 製作顯示用的表格
+            # --- 步驟 3: 顯示餘額表 (這裡修好了！) ---
             res_df = pd.DataFrame(list(balances.items()), columns=['成員', '淨額'])
             
-            # 增加狀態描述
             def get_status(x):
                 if x > 0: return f"應收 {format_money(x)}"
                 elif x < 0: return f"應付 {format_money(abs(x))}"
@@ -187,60 +178,48 @@ if not df.empty:
             
             res_df['狀態'] = res_df['淨額'].apply(get_status)
             
-            # 顏色設定
+            # 修正點：我們要檢查的是「文字」有沒有包含「應收」或「應付」
             def color_surplus(val):
-                if val > 0: return 'background-color: #d4edda; color: #155724' # 綠色
-                elif val < 0: return 'background-color: #f8d7da; color: #721c24' # 紅色
+                val_str = str(val) # 強制轉成文字
+                if "應收" in val_str:
+                    return 'background-color: #d4edda; color: #155724' # 綠色
+                elif "應付" in val_str:
+                    return 'background-color: #f8d7da; color: #721c24' # 紅色
                 return 'color: gray' # 平帳
 
             st.caption("👇 每個人目前的欠款/收款總額：")
             st.dataframe(res_df[['成員', '狀態']].style.applymap(color_surplus, subset=['狀態']), use_container_width=True)
 
-            # --- 步驟 4: 計算「誰該付錢給誰」 (核心演算法) ---
+            # --- 步驟 4: 計算轉帳路徑 ---
             st.markdown("#### 💸 建議轉帳路徑 (誰付給誰)")
             
-            # 分成兩組：欠錢的人 (Debtors) 和 收錢的人 (Creditors)
             debtors = []
             creditors = []
             
             for person, amount in balances.items():
-                # 忽略金額太小的誤差 (例如 0.01)
-                if amount < -0.01:
-                    debtors.append({'person': person, 'amount': amount})
-                elif amount > 0.01:
-                    creditors.append({'person': person, 'amount': amount})
+                if amount < -0.01: debtors.append({'person': person, 'amount': amount})
+                elif amount > 0.01: creditors.append({'person': person, 'amount': amount})
             
-            # 排序：金額大的排前面，減少轉帳次數 (Greedy Algorithm)
-            debtors.sort(key=lambda x: x['amount'])       # 負越多的排前面
-            creditors.sort(key=lambda x: x['amount'], reverse=True) # 正越多的排前面
+            debtors.sort(key=lambda x: x['amount'])
+            creditors.sort(key=lambda x: x['amount'], reverse=True)
             
             transfer_list = []
-            
-            # 開始配對
-            i = 0 # 指向欠錢的人
-            j = 0 # 指向收錢的人
+            i = 0 
+            j = 0
             
             while i < len(debtors) and j < len(creditors):
                 debtor = debtors[i]
                 creditor = creditors[j]
-                
-                # 要轉帳的金額 = min(欠錢的人欠的錢, 收錢的人該收的錢)
                 amount = min(abs(debtor['amount']), creditor['amount'])
                 
-                # 紀錄這一筆
                 transfer_list.append(f"🔴 **{debtor['person']}** 應轉給 🟢 **{creditor['person']}** : {format_money(amount)}")
                 
-                # 更新餘額
                 debtor['amount'] += amount
                 creditor['amount'] -= amount
                 
-                # 如果這個人還完了/收完了，就換下一個人
-                if abs(debtor['amount']) < 0.01:
-                    i += 1
-                if creditor['amount'] < 0.01:
-                    j += 1
+                if abs(debtor['amount']) < 0.01: i += 1
+                if creditor['amount'] < 0.01: j += 1
             
-            # 顯示結果
             if not transfer_list:
                 st.success("🎉 目前沒有人需要轉帳！")
             else:
@@ -276,4 +255,3 @@ if uploaded_file is not None:
     st.success("🎉 紀錄還原成功！請點擊下方按鈕重新整理。")
     if st.button("點我重新整理載入資料"):
         st.rerun()
-        
