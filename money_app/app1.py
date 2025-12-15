@@ -386,18 +386,39 @@ with st.container(border=True):
 # 在控制島與下方明細之間，強制推開 40px 的距離
 st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
 
-# 2. 消費明細 (互動美學版：懸停特效 + 浮動陰影 + 背景分層)
+# 2. 消費明細 (終極修復版：強制卡片文字為深色，解決深色模式吃字)
 st.subheader("📝 帳務明細")
 
-# --- CSS 樣式注入 (美化的核心) ---
+# --- CSS 樣式注入 ---
 st.markdown("""
 <style>
-    /* 1. 全站背景色：改成極淡灰，讓白色卡片突顯出來 */
+    /* 1. 全站背景：極淡灰 */
     .stApp {
         background-color: #F7F8FA;
     }
 
-    /* 2. 卡片容器樣式 (Target Streamlit's container with border) */
+    /* 2. 🔥 核心修復：白卡片內的文字強制深色 */
+    /* 針對所有白色容器內的標題、段落、span、div，強制深灰黑 */
+    [data-testid="stVerticalBlockBorderWrapper"] h1,
+    [data-testid="stVerticalBlockBorderWrapper"] h2,
+    [data-testid="stVerticalBlockBorderWrapper"] h3,
+    [data-testid="stVerticalBlockBorderWrapper"] p,
+    [data-testid="stVerticalBlockBorderWrapper"] div,
+    [data-testid="stVerticalBlockBorderWrapper"] li,
+    [data-testid="stVerticalBlockBorderWrapper"] span {
+        color: #1F2937 !important;
+    }
+
+    /* 3. 例外保護：深色標籤裡的文字必須是白的 */
+    .tag-text-white {
+        color: #FFFFFF !important;
+    }
+    
+    /* 4. 例外保護：金額顏色 (紅/綠) */
+    .amount-red { color: #dc3545 !important; }
+    .amount-green { color: #28a745 !important; }
+
+    /* 5. 卡片懸停特效 */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF;
         border: 1px solid #E6E8EB;
@@ -405,43 +426,34 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         padding: 16px;
         margin-bottom: 12px;
-        /* 動畫設定：150ms */
         transition: all 0.15s ease-in-out;
     }
-
-    /* 3. 卡片懸停 (Hover) 特效 */
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        background-color: #FCFCFC;      /* 背景微灰 */
-        border-color: #D1D5DB;          /* 邊框加深 */
-        box-shadow: 0 6px 12px rgba(0,0,0,0.08); /* 陰影加深浮起 */
-        transform: translateY(-2px);    /* 微微上浮 */
-        cursor: pointer;                /* 鼠標變手勢 */
-    }
-
-    /* 4. Icon 動畫特效 */
-    .transaction-icon {
-        transition: transform 0.15s ease, filter 0.15s ease;
-    }
-    /* 當卡片被懸停時，裡面的 Icon 做動作 */
-    [data-testid="stVerticalBlockBorderWrapper"]:hover .transaction-icon {
-        transform: scale(1.15);  /* 放大 1.15 倍 */
-        filter: brightness(0.9); /* 顏色微深 */
+        background-color: #FCFCFC;
+        border-color: #D1D5DB;
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+        transform: translateY(-2px);
     }
     
-    /* 修正 Popover 按鈕位置 */
-    [data-testid="stPopover"] {
-        margin-top: 2px;
+    /* 6. Icon 動畫 */
+    .transaction-icon { transition: transform 0.15s ease; }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover .transaction-icon {
+        transform: scale(1.15);
+    }
+
+    /* 7. 修復 Popover 彈出視窗文字 */
+    [data-testid="stPopoverBody"] * {
+        color: #1F2937 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 if not df.empty:
-    # --- 0. 篩選控制區 ---
+    # --- 0. 篩選區 ---
     all_members_opt = "👀 全員 (不篩選)"
     view_options = [all_members_opt] + st.session_state['members']
     
     col_filter_1, col_filter_2 = st.columns([1, 2])
-    
     with col_filter_1:
         current_view = st.selectbox("視角模式", view_options, index=0, label_visibility="collapsed")
 
@@ -456,7 +468,7 @@ if not df.empty:
         except AttributeError:
             selection = st.multiselect("篩選條件", filter_options, label_visibility="collapsed")
 
-    # --- 1. 執行篩選邏輯 ---
+    # --- 1. 篩選邏輯 ---
     filtered_df = df.iloc[::-1]
 
     if current_view != all_members_opt:
@@ -475,9 +487,9 @@ if not df.empty:
         if "🌍 外幣" in selection:
             filtered_df = filtered_df[filtered_df['Currency'] != "TWD"]
 
-    st.caption(f"顯示 {len(filtered_df)} 筆紀錄")
+    st.markdown(f"<p style='color:#666 !important; font-size:0.8rem;'>顯示 {len(filtered_df)} 筆紀錄</p>", unsafe_allow_html=True)
 
-    # --- 2. 畫出卡片 (美化版) ---
+    # --- 2. 畫卡片 ---
     for i, (index, row) in enumerate(filtered_df.iterrows()):
         
         is_settlement = "還款" in str(row['Item'])
@@ -486,72 +498,60 @@ if not df.empty:
         date_str = str(row['Date'])[5:] 
         item_name = row['Item']
         payer = row['Payer']
-        
         bens = [b.strip() for b in str(row['Beneficiaries']).split(",") if b.strip()]
         
-        # 這裡不特別改背景色，因為我們用 CSS 統一控制了白色卡片
         if is_settlement:
             icon = "🤝"
-            amount_color = "#28a745"
+            # 加上 class 讓 CSS 抓得到
+            amount_class = "amount-green"
             amount_display = f"+ {currency} {amount:,.0f}"
         else:
             icon = "💸"
-            amount_color = "#dc3545"
+            amount_class = "amount-red"
             amount_display = f"- {currency} {amount:,.2f}"
 
-        # HTML Tags (維持舒適樣式)
-        payer_html = f"<span style='background-color: #4A5568; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: bold; margin-right: 6px; display: inline-block; margin-bottom: 4px;'>🧍 {payer}</span>"
+        # HTML Tags (注意：加上 tag-text-white class 保護白字)
+        payer_html = f"<span class='tag-text-white' style='background-color: #4A5568; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: bold; margin-right: 6px; display: inline-block; margin-bottom: 4px;'>🧍 {payer}</span>"
         
         bens_html_parts = []
         for b in bens:
-            tag = f"<span style='border: 1px solid #E2E8F0; background-color: #F7FAFC; color: #4A5568; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px; display: inline-block;'>{b}</span>"
+            # 分帳人標籤是淺底，字要深色 (CSS 會自動處理，不用加 white class)
+            tag = f"<span style='border: 1px solid #E2E8F0; background-color: #F7FAFC; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px; display: inline-block;'>{b}</span>"
             bens_html_parts.append(tag)
         bens_html = "".join(bens_html_parts)
-        people_html = f"{payer_html}<span style='color:#ccc; margin:0 4px; font-size:0.9rem;'>➜</span>{bens_html}"
+        people_html = f"{payer_html}<span style='color:#ccc !important; margin:0 4px; font-size:0.9rem;'>➜</span>{bens_html}"
 
-        # --- 卡片容器 (Streamlit Container) ---
-        # 這裡的 border=True 會被上面的 CSS 選取到，變身成漂亮卡片
         with st.container(border=True):
-            
             c1, c2, c3, c4 = st.columns([0.7, 3.3, 1.2, 0.5])
             
             with c1:
-                # 加上 transaction-icon class 讓 CSS 可以控制動畫
                 st.markdown(f"<div class='transaction-icon' style='font-size:1.8rem; text-align:center; padding-top: 4px;'>{icon}</div>", unsafe_allow_html=True)
-            
             with c2:
                 st.markdown(f"""
                 <div style="margin-bottom: 6px;">
-                    <span style="font-weight:bold; font-size:1.05rem; color:#2D3748;">{item_name}</span>
-                    <span style="color:#A0AEC0; font-size:0.85rem; margin-left:8px;">{date_str}</span>
+                    <span style="font-weight:bold; font-size:1.05rem;">{item_name}</span>
+                    <span style="color:#A0AEC0 !important; font-size:0.85rem; margin-left:8px;">{date_str}</span>
                 </div>
                 <div style="line-height: 1.6;">{people_html}</div>
                 """, unsafe_allow_html=True)
-
             with c3:
-                st.markdown(f"<div style='text-align: right; color: {amount_color}; font-weight:bold; font-size:1.1rem; padding-top: 4px;'>{amount_display}</div>", unsafe_allow_html=True)
-
+                # 這裡使用 amount-red / amount-green class
+                st.markdown(f"<div class='{amount_class}' style='text-align: right; font-weight:bold; font-size:1.1rem; padding-top: 4px;'>{amount_display}</div>", unsafe_allow_html=True)
             with c4:
-                # 側邊選單 (Popover)
-                with st.popover("⋮", use_container_width=True, help="查看詳情與修改"):
-                    st.markdown("##### 🔍 交易詳情")
+                with st.popover("⋮", use_container_width=True):
+                    st.markdown("##### 🔍 詳情")
                     if not is_settlement and len(bens) > 0:
                         avg = amount / len(bens)
-                        st.markdown(f"**🧮 分帳計算：**")
                         st.info(f"總額 {amount:,.0f} ÷ {len(bens)} 人 = **{avg:,.1f} /人**")
                     elif is_settlement:
-                        st.success(f"這是 {payer} 還給 {bens[0]} 的款項")
-                    
+                        st.success(f"{payer} 還給 {bens[0]}")
                     st.divider()
-                    
-                    # 修改按鈕
                     if st.button("✏️ 修改/刪除", key=f"btn_edit_{index}", type="primary", use_container_width=True):
                         edit_entry_dialog(index, row)
-
 else:
     st.info("📭 目前還沒有任何紀錄")
 
-# 3. 結算儀表板 (最終修正版：解決 HTML 縮排導致顯示原始碼的問題)
+# 3. 結算儀表板 (深色模式修復版：強制儀表板文字深色)
 st.divider()
 st.subheader("💰 結算儀表板")
 
@@ -559,26 +559,44 @@ st.subheader("💰 結算儀表板")
 st.markdown("""
 <style>
     .tabular-nums { font-family: 'Inter', monospace; font-variant-numeric: tabular-nums; }
+    
+    /* 強制儀表板卡片內的文字顏色為深色 */
     .premium-card {
-        background-color: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;
-        border: 1px solid #f0f0f0; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        background-color: white; 
+        border-radius: 12px; 
+        padding: 20px; 
+        margin-bottom: 16px;
+        border: 1px solid #f0f0f0; 
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        color: #1F2937 !important; /* 🔥 關鍵修復：強制黑字 */
     }
+    
+    /* 轉帳車票也強制黑字 */
     .transfer-ticket {
         display: flex; align-items: center; justify-content: space-between;
         background: white; border: 1px dashed #d9d9d9; border-radius: 8px;
         padding: 12px 16px; margin-bottom: 8px;
+        color: #1F2937 !important; /* 🔥 關鍵修復 */
     }
+
+    /* 表格樣式 */
     .styled-table { width: 100%; border-collapse: collapse; font-family: sans-serif; }
-    .styled-table th { border-bottom: 2px solid #f0f0f0; padding: 10px; color: #888; font-size: 0.85rem; text-align: left; }
-    .styled-table td { border-bottom: 1px solid #f7f7f7; padding: 12px; font-size: 0.95rem; }
+    .styled-table th { border-bottom: 2px solid #f0f0f0; padding: 10px; color: #888 !important; font-size: 0.85rem; text-align: left; }
+    .styled-table td { border-bottom: 1px solid #f7f7f7; padding: 12px; font-size: 0.95rem; color: #1F2937 !important; } /* 🔥 td 強制黑字 */
     .styled-table tr:hover { background-color: #f9fbfc; }
     
+    /* 狀態條與 Badge */
     .status-green { border-left: 4px solid #52c41a; }
     .status-red { border-left: 4px solid #ff4d4f; }
     .status-gray { border-left: 4px solid #e6e6e6; }
     
-    .mission-box { background: #f6ffed; border: 1px solid #b7eb8f; padding: 16px; border-radius: 8px; color: #389e0d; }
-    .mission-box-debt { background: #fff1f0; border: 1px solid #ffa39e; padding: 16px; border-radius: 8px; color: #cf1322; }
+    /* 任務卡 */
+    .mission-box { background: #f6ffed; border: 1px solid #b7eb8f; padding: 16px; border-radius: 8px; color: #389e0d !important; }
+    .mission-box-debt { background: #fff1f0; border: 1px solid #ffa39e; padding: 16px; border-radius: 8px; color: #cf1322 !important; }
+    
+    /* 總花費 Metric 文字修復 */
+    .metric-label { color: #888 !important; font-size: 0.8rem; text-transform: uppercase; }
+    .metric-value { font-size: 1.5rem; font-weight: 700; color: #1F2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -613,10 +631,13 @@ if not df.empty:
                         if b not in balances: balances[b] = 0.0
                         balances[b] -= split
 
-            # --- B. 總計 ---
+            # --- B. 總計 (使用 metric-value class 強制黑字) ---
             avg_spend = total_spend / len(st.session_state['members']) if st.session_state['members'] else 0
-            # 這裡也改成單行以防萬一
-            st.markdown(f"""<div style="display: flex; gap: 20px; margin-bottom: 20px;"><div><small style="color:#888;">TOTAL</small><br><b style="font-size:1.5rem;">{currency} {total_spend:,.0f}</b></div><div style="border-left:1px solid #eee; padding-left:20px;"><small style="color:#888;">AVG/PERSON</small><br><b style="font-size:1.5rem; color:#666;">{currency} {avg_spend:,.0f}</b></div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                <div><span class="metric-label">TOTAL</span><br><span class="metric-value">{currency} {total_spend:,.0f}</span></div>
+                <div style="border-left:1px solid #eee; padding-left:20px;"><span class="metric-label">AVG/PERSON</span><br><span class="metric-value" style="color:#666 !important;">{currency} {avg_spend:,.0f}</span></div>
+            </div>""", unsafe_allow_html=True)
 
             # --- C. 排序 ---
             sorted_bal = sorted(balances.items(), key=lambda x: x[1], reverse=True)
@@ -654,12 +675,10 @@ if not df.empty:
                     st.success("🎉 帳目已平！")
                 st.divider()
 
-            # --- E. 全員表格 (🔥 這裡做了重點修正：全部壓成單行字串) ---
+            # --- E. 全員表格 ---
             c1, c2 = st.columns([3, 2])
             with c1:
                 st.markdown("##### 📊 帳務狀態表")
-                
-                # HTML 組合：全部用單行字串，避免 Python 縮排干擾 Markdown
                 html_parts = []
                 html_parts.append('<table class="styled-table"><thead><tr><th>成員</th><th>淨額</th><th>狀態</th></tr></thead><tbody>')
                 
@@ -667,13 +686,13 @@ if not df.empty:
                     net_val = float(net)
                     if net_val > 0.5:
                         row_cls = "status-green"
-                        badge = "<span style='background:#f6ffed; color:#2FB8AC; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>給我錢錢</span>"
-                        color = "#2FB8AC"
+                        badge = "<span style='background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>給我錢錢</span>"
+                        color = "#389e0d"
                         txt = f"+{net_val:,.2f}"
                     elif net_val < -0.5:
                         row_cls = "status-red"
-                        badge = "<span style='background:#fff1f0; color:#E5533D; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>交出錢錢</span>"
-                        color = "#E5533D"
+                        badge = "<span style='background:#fff1f0; color:#cf1322; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>付錢錢囉~</span>"
+                        color = "#cf1322"
                         txt = f"{net_val:,.2f}"
                     else:
                         row_cls = "status-gray"
@@ -681,12 +700,10 @@ if not df.empty:
                         color = "#ccc"
                         txt = "0.00"
                     
-                    # 🔥 關鍵：這裡不要換行，也不要縮排，直接串成一行 HTML
-                    row_html = f'<tr class="{row_cls}"><td style="font-weight:500;">{member}</td><td class="tabular-nums" style="color:{color}; font-weight:600;">{txt}</td><td>{badge}</td></tr>'
+                    row_html = f'<tr class="{row_cls}"><td style="font-weight:500;">{member}</td><td class="tabular-nums" style="color:{color} !important; font-weight:600;">{txt}</td><td>{badge}</td></tr>'
                     html_parts.append(row_html)
                 
                 html_parts.append('</tbody></table>')
-                
                 final_table_html = "".join(html_parts)
                 st.markdown(f'<div class="premium-card" style="padding:0; overflow:hidden;">{final_table_html}</div>', unsafe_allow_html=True)
 
@@ -695,10 +712,9 @@ if not df.empty:
                 if not transfer_list:
                     st.info("無須轉帳 ✨")
                 else:
-                    # 這裡也都改成單行 HTML
                     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
                     for t in transfer_list:
-                        st.markdown(f"""<div class="transfer-ticket"><div style="text-align:center;"><small style="color:#888;">付款</small><br><b>{t['from']}</b></div><div style="color:#ccc;">➜ <b style="color:#333; font-size:0.9rem;">${t['amount']:,.0f}</b></div><div style="text-align:center;"><small style="color:#888;">收款</small><br><b>{t['to']}</b></div></div>""", unsafe_allow_html=True)
+                        st.markdown(f"""<div class="transfer-ticket"><div style="text-align:center;"><small style="color:#888 !important;">付款</small><br><b>{t['from']}</b></div><div style="color:#ccc !important;">➜ <b style="color:#333 !important; font-size:0.9rem;">${t['amount']:,.0f}</b></div><div style="text-align:center;"><small style="color:#888 !important;">收款</small><br><b>{t['to']}</b></div></div>""", unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("尚無資料")
