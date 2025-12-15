@@ -386,39 +386,41 @@ with st.container(border=True):
 # 在控制島與下方明細之間，強制推開 40px 的距離
 st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
 
-# 2. 消費明細 (終極修復版：強制卡片文字為深色，解決深色模式吃字)
+# 2. 消費明細 (主畫面深色模式修復版：強制文字深色，防止白底白字)
 st.subheader("📝 帳務明細")
 
 # --- CSS 樣式注入 ---
 st.markdown("""
 <style>
-    /* 1. 全站背景：極淡灰 */
+    /* 1. 全站背景色：極淡灰 */
     .stApp {
         background-color: #F7F8FA;
     }
 
-    /* 2. 🔥 核心修復：白卡片內的文字強制深色 */
-    /* 針對所有白色容器內的標題、段落、span、div，強制深灰黑 */
-    [data-testid="stVerticalBlockBorderWrapper"] h1,
-    [data-testid="stVerticalBlockBorderWrapper"] h2,
-    [data-testid="stVerticalBlockBorderWrapper"] h3,
-    [data-testid="stVerticalBlockBorderWrapper"] p,
-    [data-testid="stVerticalBlockBorderWrapper"] div,
-    [data-testid="stVerticalBlockBorderWrapper"] li,
-    [data-testid="stVerticalBlockBorderWrapper"] span {
-        color: #1F2937 !important;
-    }
-
-    /* 3. 例外保護：深色標籤裡的文字必須是白的 */
-    .tag-text-white {
-        color: #FFFFFF !important;
+    /* 2. 🔥 核心修復：強制主畫面文字變黑 (對抗手機深色模式) */
+    /* 鎖定主內容區塊 (.stMain)，強制所有標題、段落、span 變成深灰 */
+    [data-testid="stMainBlockContainer"] h1,
+    [data-testid="stMainBlockContainer"] h2,
+    [data-testid="stMainBlockContainer"] h3,
+    [data-testid="stMainBlockContainer"] h4,
+    [data-testid="stMainBlockContainer"] h5,
+    [data-testid="stMainBlockContainer"] p,
+    [data-testid="stMainBlockContainer"] span,
+    [data-testid="stMainBlockContainer"] div,
+    [data-testid="stMainBlockContainer"] li {
+        color: #1F2937 !important; /* 深灰黑 */
     }
     
-    /* 4. 例外保護：金額顏色 (紅/綠) */
-    .amount-red { color: #dc3545 !important; }
-    .amount-green { color: #28a745 !important; }
+    /* 3. 修復 Popover (點開詳情) 裡的文字顏色 */
+    /* Popover 有時候會浮動，需要特別鎖定 */
+    [data-testid="stPopoverBody"] p,
+    [data-testid="stPopoverBody"] span,
+    [data-testid="stPopoverBody"] div,
+    [data-testid="stPopoverBody"] h5 {
+         color: #1F2937 !important;
+    }
 
-    /* 5. 卡片懸停特效 */
+    /* 4. 卡片容器樣式 */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF;
         border: 1px solid #E6E8EB;
@@ -428,32 +430,43 @@ st.markdown("""
         margin-bottom: 12px;
         transition: all 0.15s ease-in-out;
     }
+
+    /* 5. 卡片懸停特效 */
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
         background-color: #FCFCFC;
         border-color: #D1D5DB;
         box-shadow: 0 6px 12px rgba(0,0,0,0.08);
         transform: translateY(-2px);
-    }
-    
-    /* 6. Icon 動畫 */
-    .transaction-icon { transition: transform 0.15s ease; }
-    [data-testid="stVerticalBlockBorderWrapper"]:hover .transaction-icon {
-        transform: scale(1.15);
+        cursor: pointer;
     }
 
-    /* 7. 修復 Popover 彈出視窗文字 */
-    [data-testid="stPopoverBody"] * {
+    /* 6. Icon 動畫特效 */
+    .transaction-icon {
+        transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover .transaction-icon {
+        transform: scale(1.15);
+        filter: brightness(0.9);
+    }
+    
+    /* 7. 修復篩選 Chips 文字顏色 */
+    [data-testid="stMultiSelect"] span {
         color: #1F2937 !important;
     }
+    
+    /* 例外處理：保持我們自訂的紅綠顏色 (金額) */
+    /* 因為 !important 權重很高，這裡不需要額外處理，因為我們在 HTML 裡是用 inline style，通常權重足夠。
+       如果有問題，下面的程式碼會確保金額顏色正確。 */
 </style>
 """, unsafe_allow_html=True)
 
 if not df.empty:
-    # --- 0. 篩選區 ---
+    # --- 0. 篩選控制區 ---
     all_members_opt = "👀 全員 (不篩選)"
     view_options = [all_members_opt] + st.session_state['members']
     
     col_filter_1, col_filter_2 = st.columns([1, 2])
+    
     with col_filter_1:
         current_view = st.selectbox("視角模式", view_options, index=0, label_visibility="collapsed")
 
@@ -468,7 +481,7 @@ if not df.empty:
         except AttributeError:
             selection = st.multiselect("篩選條件", filter_options, label_visibility="collapsed")
 
-    # --- 1. 篩選邏輯 ---
+    # --- 1. 執行篩選邏輯 ---
     filtered_df = df.iloc[::-1]
 
     if current_view != all_members_opt:
@@ -487,9 +500,10 @@ if not df.empty:
         if "🌍 外幣" in selection:
             filtered_df = filtered_df[filtered_df['Currency'] != "TWD"]
 
-    st.markdown(f"<p style='color:#666 !important; font-size:0.8rem;'>顯示 {len(filtered_df)} 筆紀錄</p>", unsafe_allow_html=True)
+    # 強制 caption 顏色 (避免被上面的 !important 覆蓋成黑色，我們手動設深灰)
+    st.markdown(f"<p style='color:#666; font-size:0.8rem;'>顯示 {len(filtered_df)} 筆紀錄</p>", unsafe_allow_html=True)
 
-    # --- 2. 畫卡片 ---
+    # --- 2. 畫出卡片 ---
     for i, (index, row) in enumerate(filtered_df.iterrows()):
         
         is_settlement = "還款" in str(row['Item'])
@@ -498,56 +512,70 @@ if not df.empty:
         date_str = str(row['Date'])[5:] 
         item_name = row['Item']
         payer = row['Payer']
+        
         bens = [b.strip() for b in str(row['Beneficiaries']).split(",") if b.strip()]
         
         if is_settlement:
             icon = "🤝"
-            # 加上 class 讓 CSS 抓得到
-            amount_class = "amount-green"
+            # 加上 !important 確保金額顏色不會被全域 CSS 覆蓋
+            amount_color = "#28a745 !important"
             amount_display = f"+ {currency} {amount:,.0f}"
         else:
             icon = "💸"
-            amount_class = "amount-red"
+            amount_color = "#dc3545 !important"
             amount_display = f"- {currency} {amount:,.2f}"
 
-        # HTML Tags (注意：加上 tag-text-white class 保護白字)
-        payer_html = f"<span class='tag-text-white' style='background-color: #4A5568; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: bold; margin-right: 6px; display: inline-block; margin-bottom: 4px;'>🧍 {payer}</span>"
+        # HTML Tags
+        # 這些標籤背景是深色，字必須是白色的，所以要加上 color: white !important
+        payer_html = f"<span style='background-color: #4A5568; color: white !important; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: bold; margin-right: 6px; display: inline-block; margin-bottom: 4px;'>🧍 {payer}</span>"
         
         bens_html_parts = []
         for b in bens:
-            # 分帳人標籤是淺底，字要深色 (CSS 會自動處理，不用加 white class)
-            tag = f"<span style='border: 1px solid #E2E8F0; background-color: #F7FAFC; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px; display: inline-block;'>{b}</span>"
+            tag = f"<span style='border: 1px solid #E2E8F0; background-color: #F7FAFC; color: #4A5568 !important; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px; display: inline-block;'>{b}</span>"
             bens_html_parts.append(tag)
         bens_html = "".join(bens_html_parts)
         people_html = f"{payer_html}<span style='color:#ccc !important; margin:0 4px; font-size:0.9rem;'>➜</span>{bens_html}"
 
+        # --- 卡片容器 ---
         with st.container(border=True):
+            
             c1, c2, c3, c4 = st.columns([0.7, 3.3, 1.2, 0.5])
             
             with c1:
                 st.markdown(f"<div class='transaction-icon' style='font-size:1.8rem; text-align:center; padding-top: 4px;'>{icon}</div>", unsafe_allow_html=True)
+            
             with c2:
+                # 這裡的字體顏色會被上面的 CSS 強制變深，這正是我們在白卡片上需要的
                 st.markdown(f"""
                 <div style="margin-bottom: 6px;">
-                    <span style="font-weight:bold; font-size:1.05rem;">{item_name}</span>
+                    <span style="font-weight:bold; font-size:1.05rem; color:#2D3748 !important;">{item_name}</span>
                     <span style="color:#A0AEC0 !important; font-size:0.85rem; margin-left:8px;">{date_str}</span>
                 </div>
                 <div style="line-height: 1.6;">{people_html}</div>
                 """, unsafe_allow_html=True)
+
             with c3:
-                # 這裡使用 amount-red / amount-green class
-                st.markdown(f"<div class='{amount_class}' style='text-align: right; font-weight:bold; font-size:1.1rem; padding-top: 4px;'>{amount_display}</div>", unsafe_allow_html=True)
+                # 金額顏色
+                st.markdown(f"<div style='text-align: right; color: {amount_color}; font-weight:bold; font-size:1.1rem; padding-top: 4px;'>{amount_display}</div>", unsafe_allow_html=True)
+
             with c4:
-                with st.popover("⋮", use_container_width=True):
-                    st.markdown("##### 🔍 詳情")
+                # Popover
+                with st.popover("⋮", use_container_width=True, help="查看詳情與修改"):
+                    st.markdown("##### 🔍 交易詳情")
                     if not is_settlement and len(bens) > 0:
                         avg = amount / len(bens)
+                        st.markdown(f"**🧮 分帳計算：**")
+                        # st.info 預設就是藍底，字體會自動調整，不需要強制黑字
                         st.info(f"總額 {amount:,.0f} ÷ {len(bens)} 人 = **{avg:,.1f} /人**")
                     elif is_settlement:
-                        st.success(f"{payer} 還給 {bens[0]}")
+                        st.success(f"這是 {payer} 還給 {bens[0]} 的款項")
+                    
                     st.divider()
+                    
+                    # 修改按鈕
                     if st.button("✏️ 修改/刪除", key=f"btn_edit_{index}", type="primary", use_container_width=True):
                         edit_entry_dialog(index, row)
+
 else:
     st.info("📭 目前還沒有任何紀錄")
 
