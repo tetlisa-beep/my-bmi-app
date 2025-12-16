@@ -299,7 +299,7 @@ def edit_entry_dialog(index, row_data):
     with st.form("edit_form"):
         col1, col2 = st.columns(2)
         item = col1.text_input("項目", value=row_data['Item'])
-        amount = col2.number_input("金額", min_value=0.0, step=10.0, value=float(row_data['Amount']))
+        amount = col2.number_input("金額", min_value=0.0, step=10.0, value=float(row_data['Amount']), format="%g")
         
         col3, col4 = st.columns(2)
         
