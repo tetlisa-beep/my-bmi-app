@@ -386,14 +386,13 @@ with st.container(border=True):
 # 在控制島與下方明細之間，強制推開 40px 的距離
 st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
 
-# 2. 消費明細 (手機/深色模式完美修復版)
+# 2. 消費明細 (聰明金額顯示版：自動隱藏 .00)
 st.subheader("📝 帳務明細")
 
 # --- CSS 強制修復 (針對手機深色模式 & 排版) ---
 st.markdown("""
 <style>
     /* 1. 強制卡片樣式 (無視手機深色模式) */
-    /* 鎖定卡片背景為白色，邊框為淺灰 */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
@@ -402,19 +401,18 @@ st.markdown("""
         margin-bottom: 12px !important;
     }
     
-    /* 2. 強制卡片內的文字顏色 (避免被深色模式改成白色) */
-    /* 這裡我們鎖定大部分文字為深灰/黑色 */
+    /* 2. 強制卡片內的文字顏色 */
     [data-testid="stVerticalBlockBorderWrapper"] div,
     [data-testid="stVerticalBlockBorderWrapper"] span,
     [data-testid="stVerticalBlockBorderWrapper"] p {
-        color: #334155 !important; /* 深藍灰文字 */
+        color: #334155 !important;
     }
 
-    /* 3. 特殊顏色保留 (金額紅綠色) */
+    /* 3. 特殊顏色保留 */
     .amount-green { color: #16A34A !important; font-weight: bold; }
     .amount-red   { color: #DC2626 !important; font-weight: bold; }
 
-    /* 4. 優化 Icon 大小 */
+    /* 4. Icon Box */
     .icon-box {
         font-size: 1.5rem; 
         display: flex; 
@@ -422,11 +420,11 @@ st.markdown("""
         justify-content: center;
     }
 
-    /* 5. 讓 Popover 按鈕不那麼突兀 */
+    /* 5. Popover 按鈕 */
     [data-testid="stPopover"] > button {
         border: none !important;
         background: transparent !important;
-        color: #94A3B8 !important; /* 淺灰按鈕 */
+        color: #94A3B8 !important;
         padding: 0 !important;
     }
     [data-testid="stPopover"] > button:hover {
@@ -437,11 +435,10 @@ st.markdown("""
 
 if not df.empty:
     # --- 0. 篩選控制區 ---
-    # (這段邏輯保持不變，為了篇幅我稍微簡化顯示，請直接用這段)
     all_members_opt = "👀 全員 (不篩選)"
     view_options = [all_members_opt] + st.session_state['members']
     
-    col_filter_1, col_filter_2 = st.columns([1.2, 2]) # 調整一下比例適應手機
+    col_filter_1, col_filter_2 = st.columns([1.2, 2])
     
     with col_filter_1:
         current_view = st.selectbox("視角模式", view_options, index=0, label_visibility="collapsed")
@@ -478,7 +475,7 @@ if not df.empty:
 
     st.caption(f"顯示 {len(filtered_df)} 筆紀錄")
 
-    # --- 2. 畫出卡片 (使用 Vertical Alignment 修復對齊) ---
+    # --- 2. 畫出卡片 ---
     for i, (index, row) in enumerate(filtered_df.iterrows()):
         
         is_settlement = "還款" in str(row['Item'])
@@ -487,23 +484,29 @@ if not df.empty:
         date_str = str(row['Date'])[5:] 
         item_name = row['Item']
         payer = row['Payer']
-        
         bens = [b.strip() for b in str(row['Beneficiaries']).split(",") if b.strip()]
         
+        # 🔥 這裡做了修改：聰明格式化金額
+        # 如果是整數 (例如 500.0)，就顯示 500
+        # 如果有小數 (例如 500.5)，就顯示 500.50
+        if amount.is_integer():
+            formatted_amount = f"{amount:,.0f}" # 不顯示小數
+        else:
+            formatted_amount = f"{amount:,.2f}" # 顯示兩位小數
+
         if is_settlement:
             icon = "🤝"
-            amount_class = "amount-green" # 使用 CSS class 控制顏色
-            amount_display = f"+ {currency} {amount:,.0f}"
+            amount_class = "amount-green"
+            amount_display = f"+ {currency} {formatted_amount}"
         else:
             icon = "💸"
             amount_class = "amount-red"
-            amount_display = f"- {currency} {amount:,.2f}"
+            amount_display = f"- {currency} {formatted_amount}"
 
-        # HTML Tags (優化：拿掉太複雜的 margin 以免手機版跑版)
+        # HTML Tags
         payer_html = f"<span style='background-color: #475569; color: white; padding: 2px 6px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; margin-right: 4px; display: inline-block;'>{payer}</span>"
         
         bens_html_parts = []
-        # 限制顯示數量，手機版太多人會很亂，超過 3 人顯示 "+N"
         display_bens = bens[:3] 
         for b in display_bens:
             tag = f"<span style='border: 1px solid #CBD5E1; color: #475569; padding: 1px 5px; border-radius: 6px; font-size: 0.7rem; margin-right: 2px; display: inline-block;'>{b}</span>"
@@ -517,17 +520,13 @@ if not df.empty:
 
         # --- 卡片容器 ---
         with st.container(border=True):
-            # 🔥 關鍵修復：使用 vertical_alignment="center" 讓所有東西垂直置中
-            # 調整比例：[Icon, 內容, 金額, 按鈕]
-            # 手機版寬度有限，我們給「內容」最多空間
+            # 保持我們之前調整過的完美對齊
             c1, c2, c3, c4 = st.columns([0.8, 3.5, 1.5, 0.5], vertical_alignment="center")
             
             with c1:
-                # Icon 區
                 st.markdown(f"<div class='icon-box'>{icon}</div>", unsafe_allow_html=True)
             
             with c2:
-                # 內容區 (使用 div 確保換行正常)
                 st.markdown(f"""
                 <div style="line-height: 1.3;">
                     <div style="font-weight:bold; font-size:1rem; margin-bottom: 2px;">{item_name}</div>
@@ -537,11 +536,10 @@ if not df.empty:
                 """, unsafe_allow_html=True)
 
             with c3:
-                # 金額區 (靠右)
+                # 這裡引用 formatted_amount
                 st.markdown(f"<div class='{amount_class}' style='text-align: right; font-size:0.95rem;'>{amount_display}</div>", unsafe_allow_html=True)
 
             with c4:
-                # Popover 區
                 with st.popover("⋮", use_container_width=True):
                     st.markdown("##### 交易詳情")
                     if not is_settlement and len(bens) > 0:
@@ -557,34 +555,33 @@ if not df.empty:
 else:
     st.info("📭 目前還沒有任何紀錄")
 
-# 3. 結算儀表板 (修正版：精準對齊轉帳路徑 + 移除多餘白框)
+# 3. 結算儀表板 (全域聰明金額版：淨額、車票、任務卡都自動隱藏 .00)
 st.divider()
 st.subheader("💰 結算儀表板")
 
-# --- CSS 樣式 (針對對齊做優化) ---
+# --- CSS 樣式 ---
 st.markdown("""
 <style>
     .tabular-nums { font-family: 'Inter', monospace; font-variant-numeric: tabular-nums; }
     
-    /* 1. 儀表板卡片 (維持原樣) */
+    /* 1. 儀表板卡片 */
     .premium-card {
         background-color: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;
         border: 1px solid #f0f0f0; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
 
-    /* 2. 轉帳車票 (大改：使用 Flexbox 精準三欄對齊) */
+    /* 2. 轉帳車票 (三欄對齊) */
     .transfer-ticket {
         display: flex; 
-        align-items: center; /* 垂直置中 */
-        justify-content: center; /* 水平置中 */
+        align-items: center; 
+        justify-content: center; 
         background: white; 
-        border: 1px dashed #cbd5e1; /* 邊框顏色深一點點 */
+        border: 1px dashed #cbd5e1; 
         border-radius: 10px;
         padding: 12px 10px; 
         margin-bottom: 10px;
     }
     
-    /* 左側 (付款人) - 佔 1 份寬度 */
     .ticket-side {
         flex: 1;
         text-align: center;
@@ -594,9 +591,8 @@ st.markdown("""
         justify-content: center;
     }
     
-    /* 中間 (箭頭與金額) - 固定寬度，確保不歪 */
     .ticket-center {
-        flex: 0 0 100px; /* 固定 100px 寬，確保中間對齊 */
+        flex: 0 0 100px; /* 固定寬度確保置中 */
         text-align: center;
         display: flex;
         flex-direction: column;
@@ -604,13 +600,12 @@ st.markdown("""
         justify-content: center;
     }
     
-    /* 文字樣式微調 */
     .ticket-label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 2px; }
     .ticket-name { font-weight: 700; color: #334155; font-size: 0.95rem; }
     .ticket-arrow { color: #cbd5e1; font-size: 1.2rem; line-height: 1; margin-bottom: 2px;}
     .ticket-amount { font-weight: 700; color: #334155; font-size: 0.95rem; }
 
-    /* 表格樣式 (維持不變) */
+    /* 表格樣式 */
     .styled-table { width: 100%; border-collapse: collapse; font-family: sans-serif; }
     .styled-table th { border-bottom: 2px solid #f0f0f0; padding: 10px; color: #888; font-size: 0.85rem; text-align: left; }
     .styled-table td { border-bottom: 1px solid #f7f7f7; padding: 12px; font-size: 0.95rem; }
@@ -619,7 +614,7 @@ st.markdown("""
     .status-red { border-left: 4px solid #ff4d4f; }
     .status-gray { border-left: 4px solid #e6e6e6; }
     
-    /* 任務卡 (維持不變) */
+    /* 任務卡 */
     .mission-box { background: #f6ffed; border: 1px solid #b7eb8f; padding: 16px; border-radius: 8px; color: #389e0d; }
     .mission-box-debt { background: #fff1f0; border: 1px solid #ffa39e; padding: 16px; border-radius: 8px; color: #cf1322; }
 </style>
@@ -634,9 +629,15 @@ if not df.empty:
     grouped = df.groupby('Currency')
     tabs = st.tabs([f"💵 {curr}" for curr in grouped.groups.keys()])
     
+    # 定義一個小幫手函數：聰明格式化
+    def smart_fmt(val):
+        if float(val).is_integer():
+            return f"{val:,.0f}"
+        return f"{val:,.2f}"
+
     for i, (currency, group) in enumerate(grouped):
         with tabs[i]:
-            # --- A. 計算邏輯 (維持不變) ---
+            # --- A. 計算邏輯 ---
             balances = {m: 0.0 for m in st.session_state['members']}
             total_spend = 0.0
             
@@ -656,11 +657,11 @@ if not df.empty:
                         if b not in balances: balances[b] = 0.0
                         balances[b] -= split
 
-            # --- B. 總計 (維持不變) ---
+            # --- B. 總計 ---
             avg_spend = total_spend / len(st.session_state['members']) if st.session_state['members'] else 0
-            st.markdown(f"""<div style="display: flex; gap: 20px; margin-bottom: 20px;"><div><small style="color:#888;">TOTAL</small><br><b style="font-size:1.5rem;">{currency} {total_spend:,.0f}</b></div><div style="border-left:1px solid #eee; padding-left:20px;"><small style="color:#888;">AVG/PERSON</small><br><b style="font-size:1.5rem; color:#666;">{currency} {avg_spend:,.0f}</b></div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="display: flex; gap: 20px; margin-bottom: 20px;"><div><small style="color:#888;">TOTAL</small><br><b style="font-size:1.5rem;">{currency} {smart_fmt(total_spend)}</b></div><div style="border-left:1px solid #eee; padding-left:20px;"><small style="color:#888;">AVG/PERSON</small><br><b style="font-size:1.5rem; color:#666;">{currency} {smart_fmt(avg_spend)}</b></div></div>""", unsafe_allow_html=True)
 
-            # --- C. 排序 (維持不變) ---
+            # --- C. 排序 ---
             sorted_bal = sorted(balances.items(), key=lambda x: x[1], reverse=True)
             debtors = sorted([x for x in sorted_bal if x[1] < -0.01], key=lambda x: x[1])
             creditors = sorted([x for x in sorted_bal if x[1] > 0.01], key=lambda x: x[1], reverse=True)
@@ -670,21 +671,22 @@ if not df.empty:
             id_d, id_c = 0, 0
             while id_d < len(temp_d) and id_c < len(temp_c):
                 amt = min(abs(temp_d[id_d][1]), temp_c[id_c][1])
-                if amt > 0.5:
+                if amt > 0.01: # 這裡稍微放寬一點容許度
                     transfer_list.append({'from': temp_d[id_d][0], 'to': temp_c[id_c][0], 'amount': amt})
                 temp_d[id_d][1] += amt
                 temp_c[id_c][1] -= amt
                 if abs(temp_d[id_d][1]) < 0.01: id_d += 1
                 if temp_c[id_c][1] < 0.01: id_c += 1
 
-            # --- D. 個人任務 (使用新樣式) ---
+            # --- D. 個人任務 ---
             if dashboard_view != "👀 全員 (不篩選)":
                 my_bal = balances.get(dashboard_view, 0)
                 st.markdown(f"##### 🎯 {dashboard_view} 的任務")
-                if my_bal > 0.5:
-                    st.markdown(f"""<div class="mission-box premium-card"><div>應收</div><div style="font-size:1.8rem; font-weight:bold;">+{currency} {my_bal:,.1f}</div></div>""", unsafe_allow_html=True)
+                
+                # 使用 smart_fmt 處理顯示
+                if my_bal > 0.01:
+                    st.markdown(f"""<div class="mission-box premium-card"><div>應收</div><div style="font-size:1.8rem; font-weight:bold;">+{currency} {smart_fmt(my_bal)}</div></div>""", unsafe_allow_html=True)
                     for t in [x for x in transfer_list if x['to']==dashboard_view]:
-                        # 使用新的對齊樣式
                         st.markdown(f"""
                         <div class="transfer-ticket">
                             <div class="ticket-side">
@@ -693,15 +695,15 @@ if not df.empty:
                             </div>
                             <div class="ticket-center">
                                 <div class="ticket-arrow" style="color:#28a745;">➜</div>
-                                <div class="ticket-amount" style="color:#28a745;">+{t['amount']:,.0f}</div>
+                                <div class="ticket-amount" style="color:#28a745;">+{smart_fmt(t['amount'])}</div>
                             </div>
                             <div class="ticket-side">
                                 <div class="ticket-label">To</div>
                                 <div class="ticket-name">Me</div>
                             </div>
                         </div>""", unsafe_allow_html=True)
-                elif my_bal < -0.5:
-                    st.markdown(f"""<div class="mission-box-debt premium-card"><div>應付</div><div style="font-size:1.8rem; font-weight:bold;">-{currency} {abs(my_bal):,.1f}</div></div>""", unsafe_allow_html=True)
+                elif my_bal < -0.01:
+                    st.markdown(f"""<div class="mission-box-debt premium-card"><div>應付</div><div style="font-size:1.8rem; font-weight:bold;">-{currency} {smart_fmt(abs(my_bal))}</div></div>""", unsafe_allow_html=True)
                     for t in [x for x in transfer_list if x['from']==dashboard_view]:
                         st.markdown(f"""
                         <div class="transfer-ticket">
@@ -711,7 +713,7 @@ if not df.empty:
                             </div>
                             <div class="ticket-center">
                                 <div class="ticket-arrow" style="color:#cf1322;">➜</div>
-                                <div class="ticket-amount" style="color:#cf1322;">-{t['amount']:,.0f}</div>
+                                <div class="ticket-amount" style="color:#cf1322;">-{smart_fmt(t['amount'])}</div>
                             </div>
                             <div class="ticket-side">
                                 <div class="ticket-label">To</div>
@@ -726,26 +728,29 @@ if not df.empty:
             c1, c2 = st.columns([3, 2])
             with c1:
                 st.markdown("##### 📊 帳務狀態表")
-                # (表格邏輯維持單行字串)
                 html_parts = []
                 html_parts.append('<table class="styled-table"><thead><tr><th>成員</th><th>淨額</th><th>狀態</th></tr></thead><tbody>')
+                
                 for member, net in sorted_bal:
                     net_val = float(net)
-                    if net_val > 0.5:
+                    # 🔥 關鍵修正：這裡也套用 smart_fmt
+                    formatted_net = smart_fmt(abs(net_val))
+
+                    if net_val > 0.01:
                         row_cls = "status-green"
                         badge = "<span style='background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>應收</span>"
                         color = "#389e0d"
-                        txt = f"+{net_val:,.2f}"
-                    elif net_val < -0.5:
+                        txt = f"+{formatted_net}"
+                    elif net_val < -0.01:
                         row_cls = "status-red"
                         badge = "<span style='background:#fff1f0; color:#cf1322; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;'>應付</span>"
                         color = "#cf1322"
-                        txt = f"{net_val:,.2f}"
+                        txt = f"-{formatted_net}"
                     else:
                         row_cls = "status-gray"
                         badge = "<span style='color:#888; font-size:0.8rem;'>平帳</span>"
                         color = "#ccc"
-                        txt = "0.00"
+                        txt = "0"
                     
                     row_html = f'<tr class="{row_cls}"><td style="font-weight:500;">{member}</td><td class="tabular-nums" style="color:{color}; font-weight:600;">{txt}</td><td>{badge}</td></tr>'
                     html_parts.append(row_html)
@@ -758,10 +763,8 @@ if not df.empty:
                 if not transfer_list:
                     st.info("無須轉帳 ✨")
                 else:
-                    # 🔥 關鍵修正：
-                    # 1. 移除了最外層的 <div class="premium-card"> 包裹，這解決了「空白方塊」的問題
-                    # 2. 使用了新的 .ticket-side 和 .ticket-center 類別，這解決了「對齊不正」的問題
                     for t in transfer_list:
+                        # 🔥 這裡也套用 smart_fmt，確保車票金額也乾淨
                         st.markdown(f"""
                         <div class="transfer-ticket">
                             <div class="ticket-side">
@@ -770,7 +773,7 @@ if not df.empty:
                             </div>
                             <div class="ticket-center">
                                 <div class="ticket-arrow">➜</div>
-                                <div class="ticket-amount">${t['amount']:,.0f}</div>
+                                <div class="ticket-amount">${smart_fmt(t['amount'])}</div>
                             </div>
                             <div class="ticket-side">
                                 <div class="ticket-label">收款</div>
