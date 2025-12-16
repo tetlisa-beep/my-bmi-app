@@ -3,7 +3,54 @@ import pandas as pd
 import os
 import json
 import time
-from datetime import datetime, timedelta, timezone # <--- 新增這個
+import random
+from datetime import datetime, timedelta, timezone 
+
+# --- 💸 特效函式：錢錢飛走啦 (無縮排安全版) ---
+def fly_money():
+    # 1. 寫入 CSS (這段可以用原本的方式，比較不會錯)
+    st.markdown("""
+    <style>
+        @keyframes fly-up {
+            0% { bottom: -10vh; transform: translateX(0); opacity: 1; }
+            50% { opacity: 1; }
+            100% { bottom: 120vh; transform: translateX(20px); opacity: 0; }
+        }
+        .money-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 999999;
+        }
+        .money-emoji {
+            position: absolute;
+            bottom: -10vh;
+            user-select: none;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    emojis = ["💸", "💰", "💵", "🤑", "😭"]
+    
+    # 2. 組合 HTML (🔥 關鍵修改：全部擠在同一行，不要換行！)
+    html_content = '<div class="money-container">'
+    for _ in range(30):
+        e = random.choice(emojis)
+        left = random.randint(5, 95)
+        duration = random.uniform(2, 5)
+        delay = random.uniform(0, 1.5)
+        size = random.uniform(2, 5)
+        
+        # 這裡用 f-string 串接，但要注意不要有前面的縮排空格
+        html_content += f'<div class="money-emoji" style="left:{left}vw; font-size:{size}rem; animation: fly-up {duration}s linear {delay}s forwards;">{e}</div>'
+    
+    html_content += '</div>'
+
+    # 3. 輸出 (確保 unsafe_allow_html=True 有開)
+    st.markdown(html_content, unsafe_allow_html=True)
 
 # --- 設定 ---
 # 定義台灣時區 (UTC+8)
@@ -284,7 +331,7 @@ def save_entry(item, payer, amount, currency, beneficiaries):
     df.to_csv(DATA_FILE, index=False)
     
     st.success("已儲存！")
-    st.balloons()
+    fly_money()
     time.sleep(1.0)
     st.rerun()
 
