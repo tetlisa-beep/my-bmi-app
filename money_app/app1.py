@@ -219,7 +219,7 @@ def add_entry_dialog(mode):
         with st.form("add_expense_form"):
             col1, col2 = st.columns(2)
             item = col1.text_input("消費項目", placeholder="如: 晚餐、車票")
-            amount = col2.number_input("金額", min_value=0.0, step=10.0, key="exp_amt")
+            amount = col2.number_input("金額", min_value=0.0, step=10.0, format="%g", key="exp_amt")
             
             col3, col4 = st.columns(2)
             payer = col3.selectbox("誰先墊錢?", st.session_state['members'], key="exp_payer")
@@ -249,7 +249,7 @@ def add_entry_dialog(mode):
             receiver_s = col_s2.selectbox("還給誰? (收錢)", st.session_state['members'], key="stl_receiver")
             
             col_s3, col_s4 = st.columns(2)
-            amount_s = col_s3.number_input("還款金額", min_value=0.0, step=100.0, key="stl_amount")
+            amount_s = col_s3.number_input("還款金額", min_value=0.0, step=100.0, format="%g", key="stl_amount")
             currency_s = col_s4.selectbox("幣別", CURRENCIES, key="stl_curr")
             
             if st.form_submit_button("🤝 確認還款", type="primary"):
@@ -353,6 +353,9 @@ def edit_entry_dialog(index, row_data):
                 st.rerun()
 
 # --- 主畫面：Hero Header & 控制島 (取代原本的步驟 3 按鈕區) ---
+# --- 統計數據準備 ---
+num_members = len(st.session_state['members'])
+num_records = len(df) if not df.empty else 0
 
 # 1. 標題區 (Hero Section) - 取代原本最上面的 st.title
 # 使用 HTML 自訂標題，增加設計感與間距
@@ -361,13 +364,18 @@ st.markdown("""
     <h1 style="font-family:'Inter', sans-serif; font-weight: 800; font-size: 2.5rem; color: #1F2937; margin-bottom: 0;">
         ✈️ 旅程分帳系統
     </h1>
-    <p style="color: #6B7280; font-size: 1rem; margin-top: 5px;">
-        簡單、直覺的動態成員分帳工具
-    </p>
+            
 </div>
 """, unsafe_allow_html=True)
 
-# 2. 懸浮控制島 (Floating Command Bar)
+# 2. 插入狀態列 (在這裡！)
+st.markdown(f"""
+<div style="color: #64748B; font-size: 0.95rem; margin-top: -15px; margin-bottom: 20px; font-weight: 500;">
+    👥 {num_members} 位同行夥伴 &nbsp; <span style="color:#CBD5E1">|</span> &nbsp; 💰 {num_records} 筆消費紀錄
+</div>
+""", unsafe_allow_html=True)
+
+# 3. 懸浮控制島 (Floating Command Bar)
 # 我們把按鈕包在一個 container(border=True) 裡
 # 因為 CSS 已經美化了 container，所以它會自動變成漂亮的懸浮卡片
 with st.container(border=True):
@@ -382,14 +390,14 @@ with st.container(border=True):
         if st.button("🤝 登記還款", use_container_width=True):
             add_entry_dialog(1)
 
-# 3. 強制留白 (Spacer) - 解決太擠的問題
+# 4. 強制留白 (Spacer) - 解決太擠的問題
 # 在控制島與下方明細之間，強制推開 40px 的距離
 st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
 
-# 2. 消費明細 (經典復刻版：灰色標籤 + 直觀卡片 + 手機強制不換行)
+# 2. 消費明細 (手機版極致壓縮版：圖示整合、成員全開、高度縮減)
 st.subheader("📝 帳務明細")
 
-# --- CSS 樣式 (經典版 + 手機防爆鎖定) ---
+# --- CSS 優化 (針對手機版緊湊排版) ---
 st.markdown("""
 <style>
     /* 1. 卡片基礎樣式 */
@@ -398,54 +406,38 @@ st.markdown("""
         border: 1px solid #E2E8F0 !important;
         border-radius: 12px !important;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-        margin-bottom: 8px !important;
-        padding: 12px !important;
+        margin-bottom: 8px !important; /* 減少卡片間距 */
+        padding: 12px !important;      /* 減少內部留白 */
     }
     
-    /* 2. 內容文字顏色鎖定 (避免深色模式吃字) */
+    /* 2. 避免文字被深色模式吃掉 */
     [data-testid="stVerticalBlockBorderWrapper"] div,
     [data-testid="stVerticalBlockBorderWrapper"] span,
     [data-testid="stVerticalBlockBorderWrapper"] p {
         color: #334155 !important;
     }
 
-    /* 3. 🔥 關鍵：手機版強制橫排，禁止換行！ */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important; /* 核心咒語：禁止堆疊 */
-        align-items: center !important;
-        gap: 0px !important;
-    }
-    
-    /* 4. 欄位壓縮設定 (讓中間的文字區可以縮小，不要擠走按鈕) */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] {
-        min-width: 0 !important; /* 允許被壓縮 */
-    }
-
-    /* 5. Icon 區塊 */
-    .icon-box {
-        font-size: 1.6rem; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center;
-        line-height: 1;
-    }
-
-    /* 6. 金額樣式 */
-    .amount-green { color: #16A34A !important; font-weight: 700; white-space: nowrap; font-size: 0.95rem; }
-    .amount-red   { color: #DC2626 !important; font-weight: 700; white-space: nowrap; font-size: 0.95rem; }
-
-    /* 7. Popover 按鈕微調 */
+    /* 3. Popover 按鈕樣式 (靠右、不佔空間) */
     [data-testid="stPopover"] {
         display: flex;
-        justify-content: flex-end;
+        justify-content: center;
+        align-items: center;
     }
     [data-testid="stPopover"] > button {
-        border: 1px solid #E2E8F0 !important; /* 給按鈕一個淡淡的框 */
+        border: none !important;
         background: transparent !important;
-        color: #64748B !important;
-        padding: 4px 8px !important;
-        height: auto !important;
-        min-height: 0px !important;
+        color: #94A3B8 !important;
+        padding: 0 !important;
+        width: 30px !important; /* 限制按鈕寬度 */
+    }
+    
+    /* 4. 成員標籤容器 (自動換行) */
+    .people-container {
+        display: flex;
+        flex-wrap: wrap; /* 關鍵：人名太多時自動折行 */
+        gap: 4px;        /* 標籤之間的間距 */
+        align-items: center;
+        margin-top: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -491,7 +483,7 @@ if not df.empty:
 
     st.caption(f"顯示 {len(filtered_df)} 筆紀錄")
 
-    # --- 2. 畫出卡片 ---
+    # --- 2. 畫出卡片 (使用 2 欄式佈局) ---
     for i, (index, row) in enumerate(filtered_df.iterrows()):
         
         is_settlement = "還款" in str(row['Item'])
@@ -502,62 +494,70 @@ if not df.empty:
         payer = row['Payer']
         bens = [b.strip() for b in str(row['Beneficiaries']).split(",") if b.strip()]
         
-        # 聰明金額 (整數不顯示 .00)
+        # 聰明金額格式
         if amount.is_integer():
-            fmt_amt = f"{amount:,.0f}"
+            formatted_amount = f"{amount:,.0f}"
         else:
-            fmt_amt = f"{amount:,.2f}"
+            formatted_amount = f"{amount:,.2f}"
 
         if is_settlement:
             icon = "🤝"
-            amount_class = "amount-green"
-            amount_display = f"+ {currency} {fmt_amt}"
+            amount_color = "#16A34A" # 綠色
+            amount_display = f"+ {currency} {formatted_amount}"
         else:
             icon = "💸"
-            amount_class = "amount-red"
-            amount_display = f"- {currency} {fmt_amt}"
+            amount_color = "#DC2626" # 紅色
+            amount_display = f"- {currency} {formatted_amount}"
 
-        # HTML Tags (灰色膠囊)
-        # 手機版優化：加入 display: inline-block 確保不跑版
-        payer_html = f"<span style='background-color: #475569; color: white; padding: 2px 6px; border-radius: 6px; font-size: 0.7rem; font-weight: bold; margin-right: 4px; display: inline-block;'>{payer}</span>"
+        # --- HTML 組合 ---
+        # 1. 標題列：[圖示] [項目名稱] -------- [金額]
+        # 使用 Flexbox 讓金額自動靠右
+        header_html = f"""
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px;">
+            <div style="font-weight:bold; font-size:1rem; color:#334155; display:flex; align-items:center; gap:6px;">
+                <span style="font-size:1.2rem;">{icon}</span>
+                <span>{item_name}</span>
+            </div>
+            <div style="font-weight:bold; color:{amount_color}; font-size:1rem; white-space:nowrap; margin-left:8px;">
+                {amount_display}
+            </div>
+        </div>
+        """
+
+        # 2. 成員與日期列
+        # 付款人 Tag
+        payer_html = f"<span style='background-color: #475569; color: white; padding: 1px 6px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; white-space:nowrap;'>{payer}</span>"
         
+        # 分帳人 Tag (全部顯示，沒有 [:3] 限制)
         bens_html_parts = []
-        # 為了手機版面，稍微限制顯示數量，太多用 +N
-        display_bens = bens[:3]
-        for b in display_bens:
-            tag = f"<span style='border: 1px solid #CBD5E1; color: #475569; padding: 1px 5px; border-radius: 6px; font-size: 0.7rem; margin-right: 2px; display: inline-block;'>{b}</span>"
+        for b in bens:
+            tag = f"<span style='border: 1px solid #CBD5E1; color: #475569; padding: 0px 5px; border-radius: 6px; font-size: 0.75rem; white-space:nowrap;'>{b}</span>"
             bens_html_parts.append(tag)
-        
         bens_html = "".join(bens_html_parts)
-        if len(bens) > 3:
-            bens_html += f"<span style='font-size:0.7rem; color:#94A3B8;'> +{len(bens)-3}</span>"
         
-        people_html = f"{payer_html}<span style='color:#ccc; margin:0 2px;'>➜</span>{bens_html}"
+        # 組合人員列
+        # 使用我們定義的 .people-container 讓它自動換行
+        people_html = f"""
+        <div class="people-container">
+            {payer_html}
+            <span style='color:#ccc; font-size:0.8rem;'>➜</span>
+            {bens_html}
+            <span style="color:#94A3B8; font-size:0.75rem; margin-left: auto;">{date_str}</span>
+        </div>
+        """
 
         # --- 卡片容器 ---
         with st.container(border=True):
-            # 🔥 4欄佈局：Icon(0.8) | 資訊(3.2) | 金額(1.5) | 按鈕(0.5)
-            # 配合上面的 flex-wrap: nowrap CSS，手機上會強制擠在同一排
-            c1, c2, c3, c4 = st.columns([0.8, 3.2, 1.5, 0.5], vertical_alignment="center")
+            # 🔥 關鍵改變：只切成 2 欄 [內容 85% | 按鈕 15%]
+            # 這樣左邊的 HTML 內容會自適應，不會被強制切斷
+            c_content, c_action = st.columns([8.5, 1.5], vertical_alignment="center")
             
-            with c1:
-                st.markdown(f"<div class='icon-box'>{icon}</div>", unsafe_allow_html=True)
-            
-            with c2:
-                # 標題 + 日期 + 成員膠囊
-                st.markdown(f"""
-                <div style="line-height: 1.3; overflow: hidden;">
-                    <div style="font-weight:bold; font-size:0.95rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{item_name} <span style="font-size:0.75rem; color:#94A3B8; font-weight:normal; margin-left:4px;">{date_str}</span></div>
-                    <div style="margin-top: 2px;">{people_html}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            with c_content:
+                # 這裡把所有資訊一次畫出來
+                st.markdown(header_html + people_html, unsafe_allow_html=True)
 
-            with c3:
-                # 金額 (靠右)
-                st.markdown(f"<div class='{amount_class}' style='text-align: right;'>{amount_display}</div>", unsafe_allow_html=True)
-
-            with c4:
-                # 按鈕 (Popover)
+            with c_action:
+                # 右邊只放一個編輯按鈕
                 with st.popover("⋮", use_container_width=True):
                     st.markdown("##### 交易詳情")
                     if not is_settlement and len(bens) > 0:
