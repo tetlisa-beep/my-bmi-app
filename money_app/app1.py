@@ -15,9 +15,11 @@ INT_CURRENCIES = ['TWD', 'JPY', 'KRW', 'VND']
 # 定義所有支援幣別
 CURRENCIES = ['TWD', 'JPY', 'USD', 'EUR']
 
-# --- 設定檔案路徑 ---
-DATA_FILE = 'trip_ledger.csv'      # 存帳務資料
-CONFIG_FILE = 'members.json'       # 存成員名單
+# --- 設定檔案路徑 (固定在程式所在資料夾，避免受啟動目錄影響) ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, 'trip_ledger.csv')      # 存帳務資料
+CONFIG_FILE = os.path.join(BASE_DIR, 'members.json')       # 存成員名單
+HISTORY_DIR = os.path.join(BASE_DIR, 'history')
 CURRENCIES = ['JPY', 'TWD', 'USD', 'EUR'] # 這裡可以自己擴充
 
 # --- 函數：讀取與儲存成員 ---
@@ -157,9 +159,9 @@ with st.sidebar:
         st.caption("🔒 帳務封存")
         if st.button("封存目前帳本並開新局"):
              if os.path.exists(DATA_FILE):
-                if not os.path.exists("history"): os.makedirs("history")
+                if not os.path.exists(HISTORY_DIR): os.makedirs(HISTORY_DIR)
                 timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-                backup_file = f"history/ledger_{timestamp}.csv"
+                backup_file = os.path.join(HISTORY_DIR, f"ledger_{timestamp}.csv")
                 df_current = pd.read_csv(DATA_FILE)
                 df_current.to_csv(backup_file, index=False)
                 # 清空
@@ -170,13 +172,13 @@ with st.sidebar:
                 st.rerun()
         
         # C. 歷史下載
-        if os.path.exists("history"):
+        if os.path.exists(HISTORY_DIR):
             st.markdown("<br>", unsafe_allow_html=True)
-            files = [f for f in os.listdir("history") if f.endswith(".csv")]
+            files = [f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")]
             files.sort(reverse=True)
             if files:
                 selected_hist = st.selectbox("下載歷史紀錄", files)
-                file_path = os.path.join("history", selected_hist)
+                file_path = os.path.join(HISTORY_DIR, selected_hist)
                 with open(file_path, "r", encoding="utf-8") as f:
                     st.download_button(f"📥 下載 {selected_hist}", f, file_name=selected_hist, mime="text/csv")
 
@@ -821,8 +823,8 @@ with st.expander("📂 資料庫備份/還原 - 程式人員專用", expanded=Fa
     
     st.divider()
     st.caption("📜 歷史結算封存檔：")
-    if os.path.exists("history"):
-        files = sorted([f for f in os.listdir("history") if f.endswith(".csv")], reverse=True)
+    if os.path.exists(HISTORY_DIR):
+        files = sorted([f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")], reverse=True)
         for f in files:
-            with open(os.path.join("history", f), "rb") as hf:
+            with open(os.path.join(HISTORY_DIR, f), "rb") as hf:
                 st.download_button(f"📥 {f}", hf, file_name=f, key=f)
