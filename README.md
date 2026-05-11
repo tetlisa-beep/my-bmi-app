@@ -1,2 +1,4 @@
 這是一個記帳APP
 目的是不要再有黑帳發生，不要再A別人的錢了
+
+Codex/GitHub PR permission test for BMI.
